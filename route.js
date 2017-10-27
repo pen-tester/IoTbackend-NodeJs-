@@ -496,11 +496,36 @@ module.exports = function (app, io) {
       function (req, res) {
         console.log (req.body);
 
-        Stall.findOneAndUpdate({sensor_id: req.body.sensor_id}, {$set:req.body}, {upsert:true}, function(err, ent) {
+        Stall.findOneAndUpdate({sensor_id: req.body.sensor_id}, {$set:req.body}, {upsert:true,new:true}, function(err, ent) {
           if (err) {
             console.log(err);
             return res.json(err);
           }
+         // console.log(ent);
+         // return res.json(ent);
+
+          var date = new Date();
+          var oldtime=ent.modified_time;
+          var use_time = Math.round(Math.abs(date.getTime() - oldtime.getTime())/1000);
+          if(ent.status != "vacant"){  //when status triggers to  "busy"...
+            ent.number_of_changes++;
+            if(ent.busy_time!=null && ent.busy_time!=undefined)ent.busy_time+=use_time;
+            else ent.busy_time=use_time;
+            if(ent.used_week==0)ent.used_week=ent.used_today;
+            if(ent.used_month==0)ent.used_month=ent.used_week;
+            ent.used_today++;
+            ent.used_week++;
+            ent.used_month++;
+          }else{
+            ent.vacant_time+=use_time;         
+          }          
+          
+          if(ent.long_use<Math.round(use_time/60) && ent.status=="vacant") ent.long_use = Math.round(use_time/60);
+          //var current_time = date.getFullYear()+"-"+(date.etMonth()+1)+"-"+date.getDate()+" "+date.getHours()+":"+date.getMinutes()+":"+date.getSeconds();
+          ent.avg_vacant_time = Math.round(ent.vacant_time /60) + ":" + ent.vacant_time % 60;
+          ent.avg_busy_time = Math.round(ent.busy_time /60) + ":" + ent.busy_time % 60;
+          ent.save();
+
           io.emit('stall_updated', ent);
           return res.json(ent);
         });

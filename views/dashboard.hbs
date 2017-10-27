@@ -495,14 +495,14 @@
                           <tbody>
                             
                             {{#each stalls}}
-                              <tr>
+                              <tr data-target="{{sensor_id}}">
                                 <td>{{index}}</td>
-                                <td>16</td>
-                                <td>121</td>
-                                <td>523</td>
-                                <td>2:48</td>
-                                <td>10:27</td>
-                                <td>25m</td>
+                                <td data-target="used_today">{{used_today}}</td>
+                                <td data-target="used_week">{{used_week}}</td>
+                                <td data-target="used_month">{{used_month}}</td>
+                                <td data-target="avg_busy_time">{{avg_busy_time}}</td>
+                                <td data-target="avg_vacant_time">{{avg_vacant_time}}</td>
+                                <td data-target="long_use">{{long_use}}m</td>
                               </tr>
                             {{/each}}  
                           </tbody>
@@ -669,6 +669,11 @@
                     }
                 }
             }
+            var row = $("#datatable tr[data-target="+stall_ent.sensor_id+"]");
+            $(row).find("td").each(function(){
+              var target =$(this).attr("data-target");
+              $(this).text(stall_ent[target]);
+            })
             //location.reload();
             socket.emit('accepted_stall_event', stall_ent); // accept received event from the server
         });

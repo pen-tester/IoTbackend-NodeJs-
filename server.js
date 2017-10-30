@@ -143,4 +143,4 @@ if (uses > 630) {
   setTimeout(autochange, 6000);
 }
 
-setTimeout(autochange, 10000);
+//setTimeout(autochange, 10000);

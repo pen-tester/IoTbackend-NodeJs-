@@ -518,7 +518,8 @@ module.exports = function (app, io) {
             ent.used_month++;
           }else{
             ent.vacant_time+=use_time;         
-          }          
+          }      
+          ent.modified_time = date;    
           
           if(ent.long_use<Math.round(use_time/60) && ent.status=="vacant") ent.long_use = Math.round(use_time/60);
           //var current_time = date.getFullYear()+"-"+(date.etMonth()+1)+"-"+date.getDate()+" "+date.getHours()+":"+date.getMinutes()+":"+date.getSeconds();
@@ -527,6 +528,27 @@ module.exports = function (app, io) {
           ent.save();
 
           io.emit('stall_updated', ent);
+          //Getting room update records...
+          Stall.find({parent_room:ent.parent_room},function(gerr,stalls){
+            if(gerr){
+              console.log(gerr);
+              return res.json(gerr);              
+            }
+            var length = stalls.length;
+            var total=0 ,available_stalls=0;
+            for(var i=0; i<length;i++){
+              if(stalls[i].status=='vacant') available_stalls++;
+              try{
+                total+=stalls[i].busy_time/stalls[i].number_of_changes;
+              }catch(e){
+
+              }
+            }
+            var obj={available_stalls:0, avg_busy_time:0};
+            obj.available_stalls=available_stalls;
+            obj.avg_busy_time = Math.round(total/length);
+            io.emit('room_info_updated', obj);
+          });
           return res.json(ent);
         });
       });

@@ -9,7 +9,7 @@ var Stall = new Schema({
     type: String,
     required: [true, 'Stall name field is required']
   },
-  room: {
+  parent_room: {
     type: String,
     required: [true, 'Parent Room id field is required']
   },

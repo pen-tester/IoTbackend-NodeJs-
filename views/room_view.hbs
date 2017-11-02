@@ -518,9 +518,28 @@
         });
         socket.on('floor_updated', function (floor_ent) { // listen to connection acknowledgement
             console.log (floor_ent);
-            location.reload();
+            //location.reload();
             socket.emit('accepted_floor_event', floor_ent); // accept received event from the server
         });
+        socket.on('notification_battery', function (stall_entity) { // listen to connection acknowledgement
+            console.log (stall_entity);
+            var itemstring=`
+                    <li>
+                      <a>
+                        <span class="image"><img src="/images/img.jpg" alt="Profile Image" /></span>
+                        <span>
+                          <span>`+stall_entity.name+`</span>
+                          <span class="time">3 mins ago</span>
+                        </span>
+                        <span class="message">
+                          `+stall_entity.battery+`
+                        </span>
+                      </a>
+                    </li>
+            `;
+            $("#menu1").prepend(itemstring);
+            socket.emit('accepted_room_event', stall_entity); // accept received event from the server
+        });          
         $('#available_percent').animateNumber({ number: {{room.available_percent}} });
         $('#avg_vacant_time').animateNumber({ number: {{room.avg_vacant_time}} });
         $('#needs_attention').animateNumber({ number: {{room.needs_attention}} });

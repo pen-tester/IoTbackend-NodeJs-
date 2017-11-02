@@ -5,7 +5,6 @@ var passport = require('passport');
 var path = require('path');
 var request = require('request');
 var util = require('util');
-var nodemailer = require('nodemailer');
 
 var config = require('./config');
 var Account = require('./models/account');
@@ -15,6 +14,7 @@ var Floor = require('./models/floor');
 var Room = require('./models/room');
 var Stall = require('./models/stall');
 var Event = require('./models/event');
+var Notification = require('./tools/notification');
 
 function checkAuth(req, res, next) {
   var processed = false;
@@ -533,14 +533,14 @@ module.exports = function (app, io) {
           io.emit('stall_updated', ent); //For room update
 
           //Getting the venue id           
-          Stall.aggregate([{$match:{sensor_id:ent.sensor_id}},{$lookup:{from:"rooms", localField:"room",foreignField:"name", as:"rooms"} },{$project:{rooms:{parent_floor:1}}},{$unwind:"$rooms"},{$lookup:{from:"floors", localField:"rooms.parent_floor", foreignField:"floor_id",as:"floors"}}, {$unwind:"$floors"},{$project:{floors:{parent_venue:1}}} ],function(err,result){
+          Stall.aggregate([{$match:{sensor_id:ent.sensor_id}},{$lookup:{from:"rooms", localField:"parent_room",foreignField:"name", as:"rooms"} },{$project:{rooms:{parent_floor:1}}},{$unwind:"$rooms"},{$lookup:{from:"floors", localField:"rooms.parent_floor", foreignField:"floor_id",as:"floors"}}, {$unwind:"$floors"},{$project:{floors:{parent_venue:1}}} ],function(err,result){
               if(err){
                 return res.json(err);
               }            
             var venue = result[0].floors.parent_venue;
             console.log("parent venue", venue);
             //Getting the floor information
-            Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"room",foreignField:"rooms",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,result){
+            Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"rooms.name",foreignField:"parent_room",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,result){
               if(err){
                 return res.json(err);
               }
@@ -548,46 +548,60 @@ module.exports = function (app, io) {
             });
 
             //Update room info ...
+            //Getting the available counts;;;
+            Stall.aggregate([{$match:{parent_room:ent.parent_room,status:"vacant"}},{$group:{_id:null, count:{$sum:1}}}], function(err, avail_count){
+              var count = avail_count.count;
+              Notification.sendnotification("room_avail_notification", count, io);
+            });
+            Stall.aggregate([{$match:{parent_room:ent.parent_room}},{$group:{_id:null, totaltime:{$sum:"$avg_busy_time"}}}], function(err, usedtime){
+              var totaltime = usedtime.totaltime;
+              Notification.sendnotification("room_availtime_notification", totaltime, io);
+            });            
 
              //Update stall state and send notifications...
              Venue.findOne({venue_id:venue},function(err,venue_setting){
               try{
                 var batterysetting = venue_setting.notify_option.low_battery;
-                var mansetting =venue_setting.notify_option.men_floor;                
+                var mansetting =venue_setting.notify_option.women_floor;                
                 if(batterysetting.enabled=="true" && ent.battery<batterysetting.threshold){
                   if(batterysetting.bEmail=="true"){
-                    
-
-                    // Generate test SMTP service account from ethereal.email
-                    // Only needed if you don't have a real mail account for testing
-                    var transporter = nodemailer.createTransport({
-                      service: 'gmail',
-                      auth: {
-                        user: 'youremail@gmail.com',
-                        pass: 'yourpassword'
-                      }
-                    });
-
-                    var mailOptions = {
-                      from: 'youremail@gmail.com',
-                      to: 'myfriend@yahoo.com',
-                      subject: 'Sending Email using Node.js',
-                      text: 'That was easy!'
-                    };
-
-                    transporter.sendMail(mailOptions, function(error, info){
-                      if (error) {
-                        console.log(error);
-                      } else {
-                        console.log('Email sent: ' + info.response);
-                      }
-                    });                    
+                    Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
                   }
                   if(batterysetting.bDashboard=="true"){
-                    io.emit("notification_battery", ent);
+                    Notification.sendnotification("battery_updated",ent, io);
                   }
                 }
-
+                if(mansetting.maintenance.enabled=="true"){
+                  var stalls_turnover= mansetting.maintenance.stalls_turnover;
+                  var stalls_turnover_time=mansetting.maintenance.stalls_turnover_time;
+                  Stall.aggregate([{$match:{parent_room:ent.parent_room}},{$group:{_id:null,count:{$sum:1}}}], function(err, totals){
+                    var total = totals.count;
+                    Stall.aggregate([{$match:{parent_room:ent.parent_room,used_today:{$gt:stalls_turnover_time}}},{$group:{_id : null , count: {$sum: 1}}}],function(err, settingstalls){
+                      var total_used_count = settingstalls.count;
+                      if(Math.round(total_used_count/total*100)>stalls_turnover_time){
+                        if(mansetting.maintenance.bEmail=="true"){
+                          Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
+                        }
+                        if(mansetting.maintenance.bDashboard=="true"){
+                          var msg = stalls_turnover+" of room has turned over "+stalls_turnover_time;
+                          Notification.sendnotification("restroom_notification", msg, io);
+                        }                        
+                      }
+                    });
+                  });
+                  if(mansetting.acute_maintenance.enabled=="true"){
+                    var acute_maintenance = mansetting.acute_maintenance.acute_maintenance;
+                    if(ent.used_today>acute_maintenance){
+                      if(mansetting.maintenance.bEmail=="true"){
+                        Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
+                      }
+                      if(mansetting.maintenance.bDashboard=="true"){
+                        var msg = "The stall turn over "+acute_maintenance;
+                        Notification.sendnotification("restroom_notification", msg, io);
+                      }                        
+                    }                    
+                  }
+                }
               }catch(e){
 
               }
@@ -661,7 +675,7 @@ module.exports = function (app, io) {
               rooms[i].status_col = 'rgb(' + (510 * (rooms[i].total_stalls - rooms[i].available_stalls) / rooms[i].total_stalls).toFixed(0) +
                   ',' + (510 * rooms[i].available_stalls / rooms[i].total_stalls).toFixed(0) + ',0 )';
             }
-          Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:floor.parent_venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"room",foreignField:"rooms",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,allrooms){
+          Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:floor.parent_venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"rooms.name",foreignField:"parent_room",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,allrooms){
             if(err){
               return res.json(err);
             }
@@ -883,7 +897,7 @@ module.exports = function (app, io) {
            rooms[i].status_col = 'rgb('+(510*(rooms[i].total_stalls - rooms[i].available_stalls)/rooms[i].total_stalls).toFixed(0)+
            ','+(510*rooms[i].available_stalls/rooms[i].total_stalls).toFixed(0)+',0 )';
            }
-          Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:floor.parent_venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"room",foreignField:"rooms",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,allrooms){
+          Floor.aggregate([{$project:{name:1, floor_id:1, parent_venue:1}},{$match:{parent_venue:floor.parent_venue}},{$lookup:{from:"rooms",localField:"floor_id",foreignField:"parent_floor",as:"rooms"}},{$unwind:"$rooms"},{$project:{_id:0,name:1, floor_id:1, parent_venue:1, rooms:{name:1, room_type:1}}},{$lookup:{from:"stalls",localField:"rooms.name",foreignField:"parent_room",as:"stalls"}},{$unwind:"$stalls"},{$group:{_id:"$stalls.parent_room",floor:{$first:"$floor_id"},used_today:{$sum:"$stalls.used_today"},used_week:{$sum:"$stalls.used_week"},used_month:{$sum:"$stalls.used_month"},avg_vacant_time:{$avg:"$stalls.avg_vacant_time"},avg_busy_time:{$avg:"$stalls.avg_busy_time"},long_use:{$max:"$stalls.long_use"}}}],function(err,allrooms){
             if(err){
               return res.json(err);
             }

@@ -6,6 +6,8 @@ module.exports = {
 
         // Generate test SMTP service account from ethereal.email
         // Only needed if you don't have a real mail account for testing
+        //Please uncomment when using in your system.
+        /*        
         var transporter = nodemailer.createTransport({
           service: 'yandex',
           auth: {
@@ -27,7 +29,8 @@ module.exports = {
           } else {
             console.log('Email sent: ' + info.response);
           }
-        });      
+        });
+        */      
   },
   sendnotification: function (title, object, socketio) {
     // whatever

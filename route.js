@@ -550,11 +550,14 @@ module.exports = function (app, io) {
             //Update room info ...
             //Getting the available counts;;;
             Stall.aggregate([{$match:{parent_room:ent.parent_room,status:"vacant"}},{$group:{_id:null, count:{$sum:1}}}], function(err, avail_count){
+
               var count = avail_count.count;
+            //  console.log("room_avail_notification", count);
               Notification.sendnotification("room_avail_notification", count, io);
             });
             Stall.aggregate([{$match:{parent_room:ent.parent_room}},{$group:{_id:null, totaltime:{$sum:"$avg_busy_time"}}}], function(err, usedtime){
               var totaltime = usedtime.totaltime;
+             // console.log("room_availtime_notification", totaltime);
               Notification.sendnotification("room_availtime_notification", totaltime, io);
             });            
 
@@ -562,12 +565,15 @@ module.exports = function (app, io) {
              Venue.findOne({venue_id:venue},function(err,venue_setting){
               try{
                 var batterysetting = venue_setting.notify_option.low_battery;
-                var mansetting =venue_setting.notify_option.women_floor;                
+                var mansetting =venue_setting.notify_option.women_floor;   
+                 console.log("venue setting", mansetting,batterysetting);   
+               //  console.log("entry status", ent);          
                 if(batterysetting.enabled=="true" && ent.battery<batterysetting.threshold){
                   if(batterysetting.bEmail=="true"){
                     Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
                   }
                   if(batterysetting.bDashboard=="true"){
+                    console.log("battery update", ent);   
                     Notification.sendnotification("battery_updated",ent, io);
                   }
                 }
@@ -575,10 +581,13 @@ module.exports = function (app, io) {
                   var stalls_turnover= mansetting.maintenance.stalls_turnover;
                   var stalls_turnover_time=mansetting.maintenance.stalls_turnover_time;
                   Stall.aggregate([{$match:{parent_room:ent.parent_room}},{$group:{_id:null,count:{$sum:1}}}], function(err, totals){
+                    console.log("total:", totals);
                     var total = totals.count;
                     Stall.aggregate([{$match:{parent_room:ent.parent_room,used_today:{$gt:stalls_turnover_time}}},{$group:{_id : null , count: {$sum: 1}}}],function(err, settingstalls){
                       var total_used_count = settingstalls.count;
+                      console.log("settingstalls:", settingstalls);
                       if(Math.round(total_used_count/total*100)>stalls_turnover_time){
+                        console.log("Over time:");
                         if(mansetting.maintenance.bEmail=="true"){
                           Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
                         }
@@ -590,6 +599,7 @@ module.exports = function (app, io) {
                     });
                   });
                   if(mansetting.acute_maintenance.enabled=="true"){
+                    console.log("Acute maintenance:",mansetting.acute_maintenance);
                     var acute_maintenance = mansetting.acute_maintenance.acute_maintenance;
                     if(ent.used_today>acute_maintenance){
                       if(mansetting.maintenance.bEmail=="true"){

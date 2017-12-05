@@ -10,7 +10,7 @@ var path = require('path');
 var config = require('./config');
 var socket_proc = require('./connection');
 var socket_proc2 = require('./connection2');
-
+var Detect = require('./tools/detect');
 
 mongoose.connect(config.mongodb_uri);
 
@@ -143,4 +143,8 @@ if (uses > 630) {
   setTimeout(autochange, 6000);
 }
 
-//setTimeout(autochange, 10000);
+setTimeout(inspect_vene, 3000);
+
+function inspect_vene(){
+  Detect.detect();
+}

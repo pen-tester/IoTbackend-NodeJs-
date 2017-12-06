@@ -10,7 +10,16 @@ var path = require('path');
 var config = require('./config');
 var socket_proc = require('./connection');
 var socket_proc2 = require('./connection2');
-var Detect = require('./tools/detect');
+
+
+var Account = require('./models/account');
+var Campus = require('./models/campus');
+var Venue = require('./models/venue');
+var Floor = require('./models/floor');
+var Room = require('./models/room');
+var Stall = require('./models/stall');
+var Event = require('./models/event');
+var Notification = require('./tools/notification');
 
 mongoose.connect(config.mongodb_uri);
 
@@ -146,5 +155,99 @@ if (uses > 630) {
 setTimeout(inspect_vene, 3000);
 
 function inspect_vene(){
-  Detect.detect();
-}
+    console.log("detect function");
+             //Update stall state and send notifications...
+     Venue.find({},function(err,venue_settings){
+      var length = venue_settings.length;
+      for(var i =0; i<length; i++){
+        venue_setting = venue_settings[i];
+        console.log("venue setting",venue_settings);
+        var mansetting ;
+        try{
+          mansetting=venue_setting.notify_option.women_floor; 
+        }
+        catch(e){
+          continue;
+        }
+              try{
+                if(mansetting.maintenance.enabled=="true"){
+                  var old_time = mansetting.maintenance.senttime ;
+                  var date = new Date();
+                  var use_time = -1;
+                  if(old_time!=null) use_time = Math.round(Math.abs(date.getTime() - oldtime.getTime())/60000);
+
+                  var stalls_turnover= mansetting.maintenance.stalls_turnover;
+                  var stalls_turnover_time=mansetting.maintenance.stalls_turnover_time;
+
+                  Room.find({}, function(err, rooms){
+
+                    var count_rooms = rooms.count;
+                    for(var i_room =0 ;i_room<count_rooms; i_room++){
+                      var room = rooms[i_room];
+                    Stall.aggregate([{$match:{parent_room:room.room}},{$group:{_id:null,count:{$sum:1}}}], function(err, totals){
+                      console.log("total:", totals);
+                      var total = totals.count;
+                      Stall.aggregate([{$match:{parent_room:room.room,used_today:{$gt:stalls_turnover_time}}},{$group:{_id : null , count: {$sum: 1}}}],function(err, settingstalls){
+                        var total_used_count = settingstalls.count;
+                        console.log("settingstalls:", settingstalls);
+                        if(Math.round(total_used_count/total*100)>stalls_turnover_time && (use_time==-1 || use_time>stalls_turnover_time)){
+                          console.log("Over time:");
+
+                      Venue.findOneAndUpdate({venue_id:venue_setting.venue_id},{$set:{maintenance:{senttime:date}}},{upsert:true,new:true},function(err,ven){
+
+                      });
+
+
+                          if(mansetting.maintenance.bEmail=="true"){
+                            Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
+                          }
+                          if(mansetting.maintenance.bDashboard=="true"){
+                            var msg = stalls_turnover+" of room has turned over "+stalls_turnover_time;
+                            Notification.sendnotification("restroom_notification", msg, io);
+                          }                        
+                        }
+                      });
+                    });                     
+                    }
+
+                  });
+
+                  if(mansetting.acute_maintenance.enabled=="true"){
+                    console.log("Acute maintenance:",mansetting.acute_maintenance);
+                  var old_time = mansetting.acute_maintenance.senttime ;
+                  var date = new Date();
+                  var use_time = -1;
+                  if(old_time!=null)  use_time= Math.round(Math.abs(date.getTime() - oldtime.getTime())/60000);
+                   
+
+                    var acute_maintenance = mansetting.acute_maintenance.acute_maintenance;
+                    Stall.find({long_use:{$gt:acute_maintenance}}, function(err, ents){
+                      if(ents.length>0 && (use_time==-1 || use_time>acute_maintenance)){
+                      Venue.findOneAndUpdate({venue_id:venue_setting.venue_id},{$set:{acute_maintenance:{senttime:date}}},{upsert:true,new:true},function(err,ven){
+
+                      });                       
+                        if(mansetting.maintenance.bEmail=="true"){
+                          Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
+                        }
+                        if(mansetting.maintenance.bDashboard=="true"){
+                          var msg = "The stall turn over "+acute_maintenance;
+                          Notification.sendnotification("restroom_notification", msg, io);
+                        }                         
+                      }
+
+                    });                   
+                  }
+                }
+              }catch(e){
+
+              }
+
+          }
+
+
+
+             });
+
+    setTimeout(inspect_vene.bind(this), 3000);
+  }
+

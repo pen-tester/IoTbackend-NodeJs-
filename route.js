@@ -562,7 +562,28 @@ module.exports = function (app, io) {
               Notification.sendnotification("room_availtime_notification", totaltime, io);
             });            
 
+             //Update stall state and send notifications...
+             Venue.findOne({venue_id:venue},function(err,venue_setting){
+              try{
+                var batterysetting = venue_setting.notify_option.low_battery;
+                var mansetting =venue_setting.notify_option.women_floor;   
+                 console.log("venue setting", mansetting,batterysetting);   
+               //  console.log("entry status", ent);          
+                if(batterysetting.enabled=="true" && ent.battery<batterysetting.threshold){
+                  if(batterysetting.bEmail=="true"){
+                    Notification.sendemail('andrew.li1987@yandex.com','andrew.lidev@yandex.com','Hello', 'This is the first');                    
+                  }
+                  if(batterysetting.bDashboard=="true"){
+                    console.log("battery update", ent);   
+                    Notification.sendnotification("battery_updated",ent, io);
+                  }
+                }
+              }catch(e){
 
+              }
+
+
+             });
           });
 
 
